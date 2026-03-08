@@ -1,0 +1,21 @@
+name = "chatbox-api"
+main = "src/index.ts"
+compatibility_date = "2026-03-08"
+workers_dev = true
+
+[vars]
+APP_ENV = "production"
+NODE_ENV = "production"
+CORS_ORIGIN = "https://your-project.pages.dev"
+API_BASE_PATH = "/v1"
+OPENAI_MODEL = "gpt-5.4"
+OPENAI_TITLE_MODEL = "gpt-4o-mini"
+OPENAI_REASONING_MODEL = "gpt-4o-mini"
+OPENAI_REASONING_EFFORT = "medium"
+OPENAI_BASE_URL = "https://codex-api.packycode.com/v1"
+OPENAI_TEMPERATURE = "0.7"
+OPENAI_MAX_TOKENS = "2000"
+SUPABASE_URL = "https://your-project-ref.supabase.co"
+
+[observability.logs]
+enabled = true

@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["chatbox"]
+}
+
+enum MessageRole {
+  system
+  user
+  assistant
+  tool
+
+  @@map("message_role")
+  @@schema("chatbox")
+}
+
+enum AIGenerationStatus {
+  queued
+  streaming
+  succeeded
+  failed
+  cancelled
+
+  @@map("ai_generation_status")
+  @@schema("chatbox")
+}
+
+enum UserKind {
+  anonymous
+  registered
+
+  @@map("user_kind")
+  @@schema("chatbox")
+}
+
+model User {
+  id          String    @id @default(uuid()) @db.Uuid
+  kind        UserKind  @default(anonymous)
+  email       String?   @db.Citext
+  displayName String?   @map("display_name")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastSeenAt  DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  authSubject String?   @map("auth_subject")
+
+  conversations Conversation[]
+  messages      Message[]
+
+  @@unique([email], map: "idx_users_email")
+  @@index([lastSeenAt(sort: Desc)], map: "idx_users_last_seen")
+  @@index([deletedAt], map: "idx_users_deleted_at")
+  @@index([kind], map: "idx_users_kind")
+  @@map("users")
+  @@schema("chatbox")
+}
+
+model Conversation {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  title          String?
+  titleSetByUser Boolean   @default(false) @map("title_set_by_user")
+  messageCount   Int       @default(0) @map("message_count")
+  lastMessageAt  DateTime? @map("last_message_at") @db.Timestamptz(6)
+  lastMessageId  String?   @map("last_message_id") @db.Uuid
+  aiSettings     Json      @default("{}") @map("ai_settings")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  messages     Message[]      @relation("ConversationMessages")
+  lastMessage  Message?       @relation("ConversationLastMessage", fields: [lastMessageId], references: [id], onDelete: Restrict)
+  AIGeneration AIGeneration[]
+
+  @@index([userId, updatedAt(sort: Desc), id], map: "idx_conversations_user_updated")
+  @@index([userId, createdAt(sort: Desc), id], map: "idx_conversations_user_created")
+  @@index([lastMessageAt(sort: Desc)], map: "idx_conversations_last_message_at")
+  @@index([deletedAt], map: "idx_conversations_deleted_at")
+  @@map("conversations")
+  @@schema("chatbox")
+}
+
+model Message {
+  id              String      @id @default(uuid()) @db.Uuid
+  conversationId  String      @map("conversation_id") @db.Uuid
+  authorUserId    String?     @map("author_user_id") @db.Uuid
+  role            MessageRole
+  contentText     String?     @map("content_text") @db.Text
+  contentJson     Json?       @map("content_json")
+  clientMessageId String?     @map("client_message_id")
+  editedAt        DateTime?   @map("edited_at") @db.Timestamptz(6)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime?   @map("deleted_at") @db.Timestamptz(6)
+
+  conversation       Conversation   @relation("ConversationMessages", fields: [conversationId], references: [id], onDelete: Restrict)
+  author             User?          @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  aiGeneration       AIGeneration?  @relation("AssistantMessageGeneration")
+  asLastConversation Conversation[] @relation("ConversationLastMessage")
+
+  @@unique([conversationId, clientMessageId], map: "idx_messages_conv_client_id_unique")
+  @@index([conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "idx_messages_conv_created_desc")
+  @@index([conversationId, createdAt(sort: Asc), id(sort: Asc)], map: "idx_messages_conv_created_asc")
+  @@index([authorUserId], map: "idx_messages_author_user_id")
+  @@index([deletedAt], map: "idx_messages_deleted_at")
+  @@map("messages")
+  @@schema("chatbox")
+}
+
+model AIGeneration {
+  id                 String             @id @default(uuid()) @db.Uuid
+  conversationId     String             @map("conversation_id") @db.Uuid
+  assistantMessageId String             @unique(map: "idx_ai_generations_assistant_message") @map("assistant_message_id") @db.Uuid
+  status             AIGenerationStatus @default(queued)
+  provider           String             @default("openai")
+  model              String
+  temperature        Decimal?           @db.Decimal(4, 3)
+  topP               Decimal?           @map("top_p") @db.Decimal(5, 4)
+  maxOutputTokens    Int?               @map("max_output_tokens")
+  contextMessageIds  String[]           @default([]) @map("context_message_ids") @db.Uuid
+  systemPrompt       String?            @map("system_prompt") @db.Text
+  inputTokens        Int?               @map("input_tokens")
+  outputTokens       Int?               @map("output_tokens")
+  totalTokens        Int?               @map("total_tokens")
+  cachedInputTokens  Int?               @map("cached_input_tokens")
+  latencyMs          Int?               @map("latency_ms")
+  ttftMs             Int?               @map("ttft_ms")
+  providerRequestId  String?            @map("provider_request_id")
+  providerResponseId String?            @map("provider_response_id")
+  requestJson        Json?              @map("request_json")
+  responseJson       Json?              @map("response_json")
+  errorType          String?            @map("error_type")
+  errorDetail        String?            @map("error_detail")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt        DateTime?          @map("completed_at") @db.Timestamptz(6)
+
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  assistantMessage Message      @relation("AssistantMessageGeneration", fields: [assistantMessageId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt(sort: Desc), id], map: "idx_ai_generations_conv_created")
+  @@index([status, createdAt(sort: Desc)], map: "idx_ai_generations_status_created")
+  @@index([provider, model], map: "idx_ai_generations_provider_model")
+  @@map("ai_generations")
+  @@schema("chatbox")
+}
